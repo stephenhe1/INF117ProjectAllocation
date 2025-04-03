@@ -449,7 +449,9 @@ def preprocess_survey_data(survey_path, students_path, output_dir="."):
     Returns:
     pd.DataFrame: Preprocessed survey data with duplicates removed
     """
-
+    # Create the output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     # Load the survey data
     survey_data = pd.read_excel(survey_path, sheet_name="Raw Data")
 
