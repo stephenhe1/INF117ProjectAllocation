@@ -116,7 +116,7 @@ def get_project_skills():
         "Skystart App/MVP": ["Database", "Web Development (e.g.,HTML, CSS, JavaScript)"],
         "SVMMARY": ["Machine Learning/AI", "Web Development (e.g.,HTML, CSS, JavaScript)", "UI/UX Design"],
         "SuperNova Academy": ["Database", "Machine Learning/AI", "AR/VR", "UI/UX Design", "Game Development (Unity or Unreal Engine)", "Python", "React"],
-        "Balnce.ai": ["Machine Learning/AI", "AI Agentic Systems", "UI/UX Design", "Distributed Systems"],
+        "Balnce.ai": ["Machine Learning/AI", "AI Agentic Systems", "UI/UX Design"],
         "UCI School of Education - Zhenyao Cai": ["Web Development (e.g.,HTML, CSS, JavaScript)", "Database", "Machine Learning/AI"],
         "UCI Social Ecology - Richard Matthew": ["Web Development (e.g.,HTML, CSS, JavaScript)", "Database", "UI/UX Design"]
     }
@@ -207,8 +207,9 @@ def summarize_scores(file_path):
     # Combine skill and preference scores for each student
     for student in skill_scores:
         if student in preference_scores:
-            combined_scores = {project: skill_scores[student][project] + preference_scores[student][project]
-                               for project in skill_scores[student]}
+            combined_scores = {
+                project: (skill_scores[student][project]*0.35) + (preference_scores[student][project]*0.65)
+                for project in skill_scores[student]}
             student_summary[student] = combined_scores
 
     return student_summary
@@ -385,26 +386,68 @@ def allocate_projects_excluding_least_preferred(file_path):
     grouped_students = set(student for group in project_allocations.keys() for student in group)
     remaining_students = all_students - grouped_students
 
-    # Assign remaining students
+    # Get timestamp info for the remaining students
+    # Load the 'Raw Data' sheet for timestamp information
+    raw_data = pd.read_excel(file_path, sheet_name="Raw Data")
+    completed_rows = raw_data[raw_data.apply(lambda row: row.astype(str).str.contains("Completed").any(), axis=1)]
+
+    # Create a timestamp dictionary for all students
+    timestamp_col = "Timestamp"  # Change this to match your actual timestamp column
+    student_timestamps = dict(zip(completed_rows["Full Name"], completed_rows[timestamp_col]))
+
+    # Sort remaining students by their timestamp (first-come first-serve)
+    remaining_students_with_ts = [(student, student_timestamps.get(student)) for student in remaining_students]
+    remaining_students_with_ts.sort(key=lambda x: x[1])  # Sort by timestamp
+
+    # Get just the sorted list of students
+    sorted_remaining_students = [student for student, _ in remaining_students_with_ts]
+
+    # Function to find the best project for a student based on top scores and preference
     def find_best_project_for_student(student):
-        best_project = None
-        best_score = 0
+        # Get scores for all available projects with capacity
+        project_scores = []
         for project, capacity in available_projects.items():
             if capacity > 0:
                 if student in summarized_scores and project in summarized_scores[student]:
                     score = summarized_scores[student][project]
-                    if score > best_score:
-                        best_score = score
-                        best_project = project
+                    project_scores.append((project, score))
+
+        if not project_scores:
+            return None
+
+        # Sort by score in descending order and get top 3
+        project_scores.sort(key=lambda x: x[1], reverse=True)
+        top_projects = project_scores[:3] if len(project_scores) >= 3 else project_scores
+
+        # Extract preference scores from summarized_scores by using skill_scores
+        # This requires accessing the original preference calculation
+        preference_data = calculate_project_preference(file_path)
+
+        # From the top projects, find the one with highest preference score
+        best_project = None
+        highest_preference = -1
+
+        for project, _ in top_projects:
+            if student in preference_data and project in preference_data[student]:
+                preference = preference_data[student][project]
+                if preference > highest_preference:
+                    highest_preference = preference
+                    best_project = project
+
+        # If no preference data is found, fall back to the highest combined score
+        if best_project is None and project_scores:
+            best_project = project_scores[0][0]
+
         return best_project
 
-    for student in remaining_students:
+    # Assign remaining students in timestamp order (first-come first-serve)
+    for student in sorted_remaining_students:
         best_project = find_best_project_for_student(student)
         if best_project:
             # Assign the student to the project
             found_group = False
             for group in list(project_allocations.keys()):
-                if project_allocations[group] == best_project and len(group) < available_projects[best_project]:
+                if project_allocations[group] == best_project and len(group) < 5:  # Ensure we don't exceed 5 students
                     # Convert tuple group to a list, append student, then convert back to tuple
                     new_group = list(group)
                     new_group.append(student)
