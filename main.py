@@ -257,8 +257,18 @@ def get_grouped_members(file_path):
 
                 # Find the teammate's name using their UCI ID
                 if teammate_id in id_to_name:
-                    teammate_name = id_to_name[teammate_id]
-                    student_group.add(teammate_name)
+                    # Get the row for this teammate
+                    teammate_rows = completed_rows[completed_rows["UCI Student ID"] == teammate_id]
+
+                    # Only add the teammate if they also want teammates
+                    if not teammate_rows.empty:
+                        teammate_row = teammate_rows.iloc[0]
+                        teammate_wants_teammates = teammate_row.get(
+                            "Do you have any students you want to team up with?", "").lower() == "yes"
+
+                        if teammate_wants_teammates:
+                            teammate_name = id_to_name[teammate_id]
+                            student_group.add(teammate_name)
 
         # Only add groups with more than one member
         if len(student_group) > 1:
@@ -275,7 +285,6 @@ def get_grouped_members(file_path):
     return grouped_members_list
 
 
-# Helper function to merge groups (assuming this is defined elsewhere)
 def merge_groups(grouped_members, new_members):
     # Find groups that have any overlap with new_members
     overlapping_groups = []
@@ -285,7 +294,15 @@ def merge_groups(grouped_members, new_members):
 
     # If no overlapping groups, add the new_members as a new group
     if not overlapping_groups:
-        grouped_members.append(new_members)
+        # Check if new_members already exceeds maximum size
+        if len(new_members) > 5:
+            # Split the group in half
+            members_list = list(new_members)
+            half_size = len(members_list) // 2
+            grouped_members.append(set(members_list[:half_size]))
+            grouped_members.append(set(members_list[half_size:]))
+        else:
+            grouped_members.append(new_members)
         return
 
     # If there are overlapping groups, merge them with new_members
@@ -294,8 +311,16 @@ def merge_groups(grouped_members, new_members):
         merged_group.update(group)
         grouped_members.remove(group)
 
-    # Add the merged group
-    grouped_members.append(merged_group)
+    # Check if the merged group exceeds the maximum size
+    if len(merged_group) > 5:
+        # Split the group in half
+        members_list = list(merged_group)
+        half_size = len(members_list) // 2
+        grouped_members.append(set(members_list[:half_size]))
+        grouped_members.append(set(members_list[half_size:]))
+    else:
+        # Add the merged group
+        grouped_members.append(merged_group)
 
 
 def get_least_preferred_projects(file_path):
@@ -336,6 +361,7 @@ def allocate_projects_excluding_least_preferred(file_path):
 
     # Step 2: Allocate projects for grouped members excluding the least preferred ones
     grouped_members = get_grouped_members(file_path)
+    print(grouped_members)
     summarized_scores = summarize_scores(file_path)
 
     # Filter out excluded projects from available projects
@@ -704,7 +730,6 @@ final_project_allocations = allocate_projects_excluding_least_preferred("Survey.
 
 # Format the final allocations for display
 formatted_final_allocations = format_allocations(final_project_allocations)
-print(formatted_final_allocations)
 create_allocation_excel(
     formatted_allocations=formatted_final_allocations,
     survey_path="Survey.xlsx",
